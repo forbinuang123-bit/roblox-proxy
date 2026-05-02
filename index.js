@@ -7,7 +7,7 @@ app.get('/gamepasses/:userId', async (req, res) => {
     const cursor = req.query.cursor || '';
     
     try {
-        let url = `https://catalog.roblox.com/v1/search/items?category=GamePass&creatorTargetId=${userId}&limit=30&sortOrder=Asc`;
+        let url = `https://catalog.roblox.com/v1/search/items?category=GamePass&creatorTargetId=${userId}&creatorType=User&limit=30&sortOrder=Asc`;
         if (cursor) url += `&cursor=${cursor}`;
         
         const response = await axios.get(url, {
