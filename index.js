@@ -4,60 +4,68 @@ const app = express();
 
 app.get('/gamepasses/:userId', async (req, res) => {
     const userId = req.params.userId;
-    const cursor = req.query.cursor || '';
 
     try {
-        let url = `https://catalog.roblox.com/v1/search/items?category=GamePass&creatorTargetId=${userId}&creatorType=User&limit=30&sortOrder=Asc`;
-        if (cursor) url += `&cursor=${cursor}`;
+        // Step 1: Get all experiences created by this user
+        const gamesRes = await axios.get(
+            `https://games.roblox.com/v2/users/${userId}/games?accessFilter=All&limit=50&sortOrder=Asc`,
+            {
+                headers: {
+                    'Accept': 'application/json',
+                    'Referer': 'https://www.roblox.com/',
+                    'User-Agent': 'Mozilla/5.0'
+                },
+                timeout: 10000
+            }
+        );
 
-        const response = await axios.get(url, {
-            headers: {
-                'Accept': 'application/json',
-                'Referer': 'https://www.roblox.com/',
-                'User-Agent': 'Mozilla/5.0'
-            },
-            timeout: 10000
-        });
+        const games = gamesRes.data.data || [];
+        console.log(`Found ${games.length} games for user ${userId}`);
+        console.log('Games:', JSON.stringify(games.map(g => ({ id: g.id, name: g.name }))));
 
-        const items = response.data.data || [];
+        const allGamepasses = [];
 
-        // Filter only GamePass itemType and fetch details for each
-        const gamepasses = [];
-        for (const item of items) {
+        // Step 2: For each experience, get its gamepasses
+        for (const game of games) {
             try {
-                const detailRes = await axios.get(
-                    `https://economy.roblox.com/v2/game-passes/${item.id}/product-info`,
+                const gpRes = await axios.get(
+                    `https://games.roblox.com/v1/games/${game.id}/game-passes?limit=100&sortOrder=Asc`,
                     {
                         headers: {
                             'Accept': 'application/json',
                             'Referer': 'https://www.roblox.com/',
                             'User-Agent': 'Mozilla/5.0'
                         },
-                        timeout: 5000
+                        timeout: 10000
                     }
                 );
-                const detail = detailRes.data;
-                if (detail && detail.IsForSale) {
-                    gamepasses.push({
-                        id: item.id,
-                        name: detail.Name,
-                        price: detail.PriceInRobux || 0,
+
+                const passes = gpRes.data.data || [];
+                console.log(`Game "${game.name}" (${game.id}): ${passes.length} gamepasses`);
+
+                for (const pass of passes) {
+                    console.log(`  - ${pass.name} R$${pass.price}`);
+                    allGamepasses.push({
+                        id: pass.id,
+                        name: pass.name,
+                        price: pass.price || 0,
                         itemType: 'GamePass'
                     });
-                    console.log(`Added: ${detail.Name} - R$${detail.PriceInRobux}`);
                 }
-            } catch (detailErr) {
-                console.error(`Failed detail fetch for ${item.id}:`, detailErr.message);
+            } catch (gpErr) {
+                console.error(`Failed passes for game ${game.id}:`, gpErr.message);
             }
         }
 
-        res.json({
-            data: gamepasses,
-            nextPageCursor: response.data.nextPageCursor || null
-        });
+        console.log(`Total gamepasses: ${allGamepasses.length}`);
+        res.json({ data: allGamepasses, nextPageCursor: null });
 
     } catch (error) {
         console.error('Error:', error.message);
+        if (error.response) {
+            console.error('Status:', error.response.status);
+            console.error('Data:', JSON.stringify(error.response.data));
+        }
         res.status(500).json({
             error: error.message,
             status: error.response ? error.response.status : 'no response'
